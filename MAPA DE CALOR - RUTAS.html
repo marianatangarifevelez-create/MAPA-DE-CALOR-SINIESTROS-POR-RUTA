@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Mapa de Siniestros por Ruta</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;
+  --surface:#161b22;
+  --surface2:#1c2128;
+  --border:rgba(255,255,255,0.08);
+  --text:#e6edf3;
+  --dim:#7d8590;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow-x:hidden}
+#app{display:flex;flex-direction:column;min-height:100vh}
+
+/* HEADER */
+.header{
+  text-align:center;padding:28px 20px 18px;
+  background:linear-gradient(180deg,rgba(22,27,34,0.98) 0%,rgba(13,17,23,0.95) 100%);
+  border-bottom:1px solid var(--border);
+}
+.header h1{
+  font-size:clamp(20px,2.5vw,30px);font-weight:700;
+  color:#e6edf3;letter-spacing:-0.3px;margin-bottom:6px;
+}
+.header h1 span{margin-right:8px}
+.header p{font-size:13px;color:var(--dim);font-weight:400}
+
+/* CHART WRAP */
+#chart-wrap{
+  flex:1;position:relative;
+  margin:0 auto;width:100%;max-width:1400px;
+  padding:12px 16px 0;
+}
+#map{width:100%;height:580px;border-radius:12px;overflow:hidden;border:1px solid var(--border)}
+
+/* HINT */
+.hint{
+  text-align:center;padding:10px;font-size:12px;color:var(--dim);
+}
+.hint span{margin-right:4px}
+
+/* TOGGLE BUTTONS */
+.controls{
+  display:flex;justify-content:center;gap:10px;margin:14px 0 4px;flex-wrap:wrap;
+}
+.btn{
+  padding:6px 16px;border-radius:20px;border:1px solid var(--border);
+  background:var(--surface2);color:var(--dim);font-size:12px;font-weight:500;
+  cursor:pointer;transition:all .15s;font-family:'Inter',sans-serif;
+}
+.btn:hover{border-color:rgba(255,255,255,0.2);color:var(--text)}
+.btn.active{background:rgba(240,192,64,0.15);border-color:rgba(240,192,64,0.4);color:#f0c040}
+
+/* STATS CARDS */
+.cards{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:12px;padding:16px;max-width:1400px;margin:0 auto;width:100%;
+}
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;padding:16px 20px;transition:border-color .2s;cursor:default;
+}
+.card:hover{border-color:rgba(255,255,255,0.18)}
+.card .val{font-size:clamp(22px,3vw,32px);font-weight:700;line-height:1;margin-bottom:4px}
+.card .lbl{font-size:12px;color:var(--dim)}
+.c1 .val{color:#e8453c}
+.c2 .val{color:#f0a500}
+.c3 .val{color:#3fc1c9}
+.c4 .val{color:#58a6ff}
+.c5 .val{color:#7ee787}
+.c6 .val{color:#bc8cff}
+
+/* FOOTER */
+footer{
+  text-align:center;padding:14px;font-size:11px;color:var(--dim);
+  border-top:1px solid var(--border);margin-top:8px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+<div class="header">
+  <h1><span>🗺️</span> Mapa de Siniestros por Ruta — Global</h1>
+  <p>250 siniestros · Distribución geográfica · Rutas de mayor incidencia · Escala de color: verde-azul (bajo) → rojo (alto)</p>
+</div>
+
+<div id="chart-wrap">
+  <div class="controls">
+    <button class="btn active" id="btn-both" onclick="setView('both')">Rutas + Aeropuertos</button>
+    <button class="btn" id="btn-routes" onclick="setView('routes')">Solo rutas</button>
+    <button class="btn" id="btn-airports" onclick="setView('airports')">Solo aeropuertos</button>
+    <button class="btn" id="btn-top10" onclick="setView('top10')">Top 10 rutas</button>
+  </div>
+  <div id="map"></div>
+  <div class="hint"><span>💡</span> Pasa el cursor sobre cada arco o punto para ver el detalle · El grosor y color de la ruta representa la cantidad de siniestros</div>
+</div>
+
+<div class="cards">
+  <div class="card c1"><div class="val">BOG</div><div class="lbl">Hub principal · 174 incidencias</div></div>
+  <div class="card c2"><div class="val">MIA</div><div class="lbl">2.° hub · 96 incidencias</div></div>
+  <div class="card c3"><div class="val">BOG↔MIA</div><div class="lbl">Ruta #1 · 38 siniestros</div></div>
+  <div class="card c4"><div class="val">BOG↔MAD</div><div class="lbl">Ruta #2 · 31 siniestros</div></div>
+  <div class="card c5"><div class="val">250</div><div class="lbl">Total claims · 151 rutas</div></div>
+  <div class="card c6"><div class="val">2Q 2025–1Q 2026</div><div class="lbl">Período analizado</div></div>
+</div>
+
+<footer>2Q 2025 – 1Q 2026 · TAMPA / TACA · 250 siniestros en 151 rutas únicas</footer>
+</div>
+
+<script>
+// ── DATA ─────────────────────────────────────────────────────────────────────
+const AIRPORTS = {
+  BOG:[4.70,-74.15],  MIA:[25.79,-80.29], UIO:[-0.12,-78.48], MAD:[40.47,-3.56],
+  LAX:[33.94,-118.41],VCP:[-23.00,-47.13],SJO:[9.99,-84.21],  SAL:[13.44,-89.06],
+  SCL:[-33.39,-70.79],BCN:[41.30,2.08],   JFK:[40.64,-73.78], NLU:[19.76,-99.02],
+  LIM:[-12.02,-77.11],CDG:[49.01,2.55],   LHR:[51.48,-0.46],  MDE:[6.16,-75.43],
+  GYE:[-2.16,-79.88], EZE:[-34.82,-58.54],GRU:[-23.43,-46.47],MVD:[-34.84,-56.01],
+  PTY:[9.07,-79.38],  GDL:[20.52,-103.31],GUA:[14.58,-90.53], ASU:[-25.24,-57.52],
+  MGA:[12.14,-86.17], SAP:[15.45,-87.92], YUL:[45.46,-73.75], YYZ:[43.68,-79.63],
+  VVI:[-17.64,-63.14],FLN:[-27.67,-48.55],MAO:[-3.04,-60.05], SDQ:[18.43,-69.67],
+  DXB:[25.25,55.37],  HYD:[17.24,78.43],  AMS:[52.31,4.77],   FRA:[50.04,8.56],
+  MID:[20.97,-89.62], ORD:[41.98,-87.91], BAQ:[10.89,-74.78], CLO:[3.54,-76.38],
+  SWK:[51.48,-0.46],  MEX:[19.43,-99.13], BOS:[42.37,-71.01], SJU:[18.44,-66.00],
+  IAH:[29.99,-95.34],
+};
+
+const AP_COUNTS = {"MIA":96,"NLU":10,"SJO":17,"MEX":2,"BOG":174,"VVI":5,"MAD":34,"EZE":8,"GRU":8,"UIO":35,"LAX":24,"GDL":4,"SAL":16,"SAP":5,"YUL":3,"MDE":9,"ORD":3,"LIM":10,"JFK":11,"ASU":6,"GYE":9,"SJU":3,"BCN":12,"MVD":7,"VCP":21,"FLN":2,"SCL":16,"MGA":3,"BAQ":2,"CDG":10,"FRA":3,"CLO":3,"DXB":3,"HYD":2,"GUA":7,"SWK":3,"LHR":10,"PTY":5,"BOS":2,"MAO":3,"YYZ":2,"AMS":2,"MID":2,"VVI":5,"VCP":21,"MEX":2,"IAH":1};
+
+const SEGMENTS = [
+  {"a":"BOG","b":"MIA","n":38},{"a":"BOG","b":"MAD","n":31},{"a":"BOG","b":"UIO","n":22},
+  {"a":"BOG","b":"LAX","n":15},{"a":"BOG","b":"VCP","n":14},{"a":"BCN","b":"BOG","n":12},
+  {"a":"MIA","b":"UIO","n":11},{"a":"MIA","b":"SJO","n":10},{"a":"BOG","b":"CDG","n":10},
+  {"a":"BOG","b":"LHR","n":10},{"a":"BOG","b":"SCL","n":9}, {"a":"BOG","b":"GRU","n":8},
+  {"a":"BOG","b":"LIM","n":8}, {"a":"BOG","b":"NLU","n":8}, {"a":"BOG","b":"EZE","n":7},
+  {"a":"BOG","b":"SAL","n":6}, {"a":"MIA","b":"SCL","n":6}, {"a":"MIA","b":"VCP","n":6},
+  {"a":"BOG","b":"JFK","n":6}, {"a":"BOG","b":"VVI","n":5}, {"a":"MDE","b":"MIA","n":5},
+  {"a":"BOG","b":"GYE","n":5}, {"a":"MVD","b":"VCP","n":4}, {"a":"BOG","b":"PTY","n":4},
+  {"a":"GDL","b":"LAX","n":3}, {"a":"LAX","b":"SAL","n":3}, {"a":"SAL","b":"SAP","n":3},
+  {"a":"BOG","b":"YUL","n":3}, {"a":"ASU","b":"MIA","n":3}, {"a":"MGA","b":"SAL","n":3},
+  {"a":"GUA","b":"MIA","n":3}, {"a":"MAD","b":"SWK","n":3}, {"a":"BOG","b":"SJO","n":3},
+  {"a":"SAL","b":"SJO","n":3}, {"a":"MIA","b":"NLU","n":2}, {"a":"BOG","b":"MEX","n":2},
+  {"a":"JFK","b":"MIA","n":2}, {"a":"FLN","b":"MIA","n":2}, {"a":"BOG","b":"MDE","n":2},
+  {"a":"JFK","b":"SAL","n":2}, {"a":"EZE","b":"MVD","n":2}, {"a":"BAQ","b":"BOG","n":2},
+  {"a":"FRA","b":"MAD","n":2}, {"a":"GYE","b":"MIA","n":2},
+  {"a":"BOG","b":"CLO","n":2}, {"a":"MAO","b":"MIA","n":2}, {"a":"MIA","b":"SAP","n":2},
+  {"a":"BOG","b":"YYZ","n":2}, {"a":"BOG","b":"GUA","n":2}, {"a":"AMS","b":"MAD","n":2},
+  {"a":"MIA","b":"MID","n":2}
+];
+
+const MAX_SEG = 38;
+const MAX_AP  = 174;
+
+// ── COLOR SCALE ──────────────────────────────────────────────────────────────
+function lerp(a,b,t){return a+(b-a)*t}
+function segColor(n, alpha=1){
+  const t = Math.pow(n/MAX_SEG, 0.5);
+  const stops = [
+    [0.00,[42,180,160]],
+    [0.25,[87,210,153]],
+    [0.50,[244,180,60]],
+    [0.75,[231,111,60]],
+    [1.00,[220,30,30]],
+  ];
+  for(let i=0;i<stops.length-1;i++){
+    const [t0,c0]=stops[i],[t1,c1]=stops[i+1];
+    if(t>=t0&&t<=t1){
+      const f=(t-t0)/(t1-t0);
+      const r=Math.round(lerp(c0[0],c1[0],f));
+      const g=Math.round(lerp(c0[1],c1[1],f));
+      const b2=Math.round(lerp(c0[2],c1[2],f));
+      return alpha<1 ? `rgba(${r},${g},${b2},${alpha})` : `rgb(${r},${g},${b2})`;
+    }
+  }
+  return `rgb(220,30,30)`;
+}
+
+function apColor(n){
+  const t = Math.pow(n/MAX_AP,0.5);
+  const c0=[42,200,190], c1=[244,180,60], c2=[220,30,30];
+  if(t<0.4){const f=t/0.4;return[lerp(c0[0],c1[0],f),lerp(c0[1],c1[1],f),lerp(c0[2],c1[2],f)].map(Math.round);}
+  const f=(t-0.4)/0.6;return[lerp(c1[0],c2[0],f),lerp(c1[1],c2[1],f),lerp(c1[2],c2[2],f)].map(Math.round);
+}
+
+// ── BUILD TRACES ─────────────────────────────────────────────────────────────
+function buildRouteTraces(segList){
+  return segList.map(seg => {
+    if(!AIRPORTS[seg.a]||!AIRPORTS[seg.b]) return null;
+    const [lat1,lon1]=AIRPORTS[seg.a];
+    const [lat2,lon2]=AIRPORTS[seg.b];
+    // Great circle interpolation (simple)
+    const steps=40;
+    const lats=[],lons=[];
+    for(let i=0;i<=steps;i++){
+      const t=i/steps;
+      lats.push(lat1+(lat2-lat1)*t);
+      lons.push(lon1+(lon2-lon1)*t);
+    }
+    const w = 1 + (seg.n/MAX_SEG)**0.5 * 5;
+    const col = segColor(seg.n);
+    const opacity = 0.35 + (seg.n/MAX_SEG)*0.55;
+    return {
+      type:'scattergeo', mode:'lines',
+      lat:lats, lon:lons,
+      line:{width:w, color:col},
+      opacity:opacity,
+      hovertemplate:`<b>Ruta ${seg.a} ↔ ${seg.b}</b><br>Siniestros: <b>${seg.n}</b><extra></extra>`,
+      showlegend:false,
+      name:`${seg.a}↔${seg.b}`,
+    };
+  }).filter(Boolean);
+}
+
+function buildAirportTrace(){
+  const codes=Object.keys(AP_COUNTS).filter(c=>AIRPORTS[c]);
+  const lats=codes.map(c=>AIRPORTS[c][0]);
+  const lons=codes.map(c=>AIRPORTS[c][1]);
+  const ns=codes.map(c=>AP_COUNTS[c]);
+  const sizes=ns.map(n=>Math.max(5, 5+(n/MAX_AP)**0.5*32));
+  const colors=ns.map(n=>{const [r,g,b]=apColor(n);return`rgb(${r},${g},${b})`;});
+  return {
+    type:'scattergeo', mode:'markers+text',
+    lat:lats, lon:lons,
+    text:codes,
+    textposition:codes.map(c=>c==='BOG'?'bottom center':'top center'),
+    textfont:{size:11, color:'rgba(220,225,235,0.9)', family:'Inter'},
+    marker:{
+      size:sizes,
+      color:colors,
+      line:{width:1.5, color:'rgba(255,255,255,0.25)'},
+      opacity:0.9,
+    },
+    hovertemplate:codes.map((c,i)=>`<b>${c}</b><br>Incidencias: <b>${ns[i]}</b><extra></extra>`),
+    showlegend:false,
+    name:'Aeropuertos',
+  };
+}
+
+// ── LAYOUT ───────────────────────────────────────────────────────────────────
+const layout = {
+  geo:{
+    projection:{type:'natural earth'},
+    showland:true,     landcolor:'rgb(22,27,34)',
+    showocean:true,    oceancolor:'rgb(13,17,23)',
+    showcountries:true,countrycolor:'rgba(255,255,255,0.06)',
+    showcoastlines:true,coastlinecolor:'rgba(255,255,255,0.08)',
+    showframe:false,
+    bgcolor:'rgb(13,17,23)',
+    lataxis:{range:[-58,68]},
+    lonaxis:{range:[-130,30]},
+  },
+  paper_bgcolor:'rgb(13,17,23)',
+  plot_bgcolor:'rgb(13,17,23)',
+  margin:{t:0,b:0,l:0,r:0},
+  coloraxis:{
+    colorscale:[
+      [0,'rgb(42,180,160)'],[0.25,'rgb(87,210,153)'],
+      [0.5,'rgb(244,180,60)'],[0.75,'rgb(231,111,60)'],
+      [1,'rgb(220,30,30)']
+    ],
+    colorbar:{
+      title:{text:'Siniestros',font:{color:'#7d8590',size:11}},
+      tickfont:{color:'#7d8590',size:10},
+      x:0.99, xanchor:'right',
+      bgcolor:'rgba(22,27,34,0.85)',
+      bordercolor:'rgba(255,255,255,0.08)',
+      borderwidth:1,
+      thickness:14,
+      len:0.55,
+      y:0.5,
+      tickvals:[1,5,10,20,30,38],
+      ticktext:['1','5','10','20','30','38'],
+    },
+    cmin:1, cmax:38,
+  },
+  // Invisible colorbar anchor trace
+  showlegend:false,
+};
+
+// Invisible trace just to show colorbar
+const colorbarTrace = {
+  type:'scattergeo', mode:'markers',
+  lat:[0], lon:[0],
+  marker:{color:[20], colorscale:[
+    [0,'rgb(42,180,160)'],[0.25,'rgb(87,210,153)'],
+    [0.5,'rgb(244,180,60)'],[0.75,'rgb(231,111,60)'],
+    [1,'rgb(220,30,30)']
+  ],
+  cmin:1, cmax:38, size:0, opacity:0,
+  colorbar:{
+    title:{text:'Siniestros',font:{color:'#aab0bc',size:12,family:'Inter'},side:'right'},
+    tickfont:{color:'#7d8590',size:10,family:'Inter'},
+    x:1.01, xanchor:'left',
+    bgcolor:'rgba(22,27,34,0.88)',
+    bordercolor:'rgba(255,255,255,0.1)',
+    borderwidth:1,
+    thickness:14, len:0.5, y:0.73,
+    tickvals:[1,5,10,20,30,38],
+    ticktext:['1','5','10','20','30','38'],
+    outlinewidth:0,
+  }},
+  hoverinfo:'none', showlegend:false,
+};
+
+const config = {
+  displayModeBar:true,
+  modeBarButtonsToRemove:['select2d','lasso2d','autoScale2d'],
+  displaylogo:false,
+  responsive:true,
+  toImageButtonOptions:{format:'png',filename:'mapa_rutas_siniestros',scale:2},
+};
+
+// ── RENDER ───────────────────────────────────────────────────────────────────
+let currentView = 'both';
+
+function getTraces(view){
+  const segs = view==='top10' ? SEGMENTS.slice(0,10) : SEGMENTS;
+  const routeTraces = (view!=='airports') ? buildRouteTraces(segs) : [];
+  const apTrace = (view!=='routes' && view!=='top10') ? [buildAirportTrace()] : view==='top10' ? [buildAirportTrace()] : [];
+  return [...routeTraces, colorbarTrace, ...apTrace];
+}
+
+Plotly.newPlot('map', getTraces('both'), layout, config);
+
+function setView(v){
+  currentView = v;
+  document.querySelectorAll('.btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+v).classList.add('active');
+  Plotly.react('map', getTraces(v), layout, config);
+}
+</script>
+</body>
+</html>
